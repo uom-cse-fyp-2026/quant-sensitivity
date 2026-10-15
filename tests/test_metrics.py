@@ -28,6 +28,7 @@ def test_metric_constants_match_config(cfg):
     assert metrics.KAPPA_NULL_REF_NORM == m["kappa_null_ref_norm"]
     assert metrics.COLLAPSED_STD == m["collapsed_output_std"]
     assert metrics.AT_FLOOR_FACTOR == cfg["references"]["at_floor_factor"]
+    assert metrics.KAPPA_FLOOR_FACTOR == m["kappa_floor_factor"]
     assert PRIMARY == m["primary"]
     assert set(OPS) == set(cfg["operators"]["core"])
 

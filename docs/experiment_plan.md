@@ -213,7 +213,7 @@ Every quantized output is compared with the FP32 reference (the supervisor's bas
 - `y_ref32 = Op(x)` in FP32, computed **once** per input and reused for all quantizers.
 - `y_ref64 = Op(x.double())`, also once per input.
 - `fp32_floor = metric(y_ref64, y_ref32)`, saved per sample. If a quantization error is within 10× of this floor, flag it as "at numerical floor".
-- `rel_l2_floor = ‖y_ref32 − y_ref64‖₂ / ‖y_ref64‖₂`, the noise level of κ's numerator. `kappa_at_floor` is 1 when the output's relative error is within 10× of it; such κ values are FP32 noise and are never reported as findings. (Added at Gate 0: the pilot showed softmax under D1/D5 dynamic with errors at FP32 resolution, where κ differed by up to 50% between machines.)
+- `rel_l2_floor = ‖y_ref32 − y_ref64‖₂ / ‖y_ref64‖₂`, the noise level of κ's numerator. `kappa_at_floor` is 1 when the output's relative error is within 1,000× of it; such κ values are FP32 noise and are never reported as findings. (Added at Gate 0: comparing VM and laptop pilots, κ differed between machines by up to 73% at 10–30× the floor, 22% at 30–100×, 1.8% at 100–1,000× and 0.4% above 1,000×.)
 - Compute all metrics in FP64 from the stored FP32 outputs.
 
 ### 6.2 Metrics by operator

@@ -103,6 +103,7 @@ metrics:
   probability_clamp: 1.0e-12   # KL uses clamped, renormalised FP64 distributions (KL >= 0)
   norm_l2_eps: 1.0e-12
   kappa_null_ref_norm: 1.0e-12
+  kappa_floor_factor: 1000   # kappa_at_floor when output relative error <= 1000 x rel_l2_floor
   collapsed_output_std: 1.0e-3
   kurtosis: excess        # m4 / m2^2 - 3; a normal gives 0
   # 1 when the set of argmax indices of the quantized output differs from the reference's.

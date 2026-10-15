@@ -14,6 +14,9 @@ NORM_EPS = 1e-12
 KAPPA_NULL_REF_NORM = 1e-12
 COLLAPSED_STD = 1e-3
 AT_FLOOR_FACTOR = 10
+# kappa is a ratio of relative errors, so it needs a wider margin: at 1000x the floor, kappa
+# agreed across machines to 0.4%; at 10-30x it differed by up to 73% (Gate 0 pilot).
+KAPPA_FLOOR_FACTOR = 1000
 
 PRIMARY = {"sum": "abs_error", "softmax": "softmax_kl", "layer_norm": "norm_l2", "gelu": "norm_l2"}
 
@@ -109,9 +112,9 @@ def evaluate(op: str, x: torch.Tensor, x_hat: torch.Tensor,
         fp32_floor=floor,
         at_floor=int(m[PRIMARY[op]] <= AT_FLOOR_FACTOR * abs(floor)),
         rel_l2_floor=l2_floor,
-        # kappa's output error is within 10x of FP32's own rounding: kappa is noise, not signal
+        # kappa's output error is within 1000x of FP32's own rounding: kappa is noise, not signal
         kappa_at_floor=(None if out_rel is None or l2_floor is None
-                        else int(out_rel <= AT_FLOOR_FACTOR * l2_floor)),
+                        else int(out_rel <= KAPPA_FLOOR_FACTOR * l2_floor)),
         ref_finite=int(torch.isfinite(y_ref32).all().item()),
         quant_finite=int(torch.isfinite(y_q).all().item() and torch.isfinite(x_hat).all().item()),
     )
