@@ -1,0 +1,133 @@
+# NeuroMinds Stage 1 experiment configuration.
+# Source of truth for every factor, level, split size and seed. Plan: docs/experiment_plan.md.
+# Values marked "pending supervisor" follow the plan's defaults until the supervisor confirms them.
+
+experiment:
+  name: neurominds-quant-sensitivity
+  plan_version: "v2 (2026-10-15)"
+  status: pre-registered (Gate 0); Tier 2 (LLM activations, matvec, FP8/asymmetric) deferred
+
+research_questions:
+  RQ1: Does error under a fixed quantizer change across input regimes?
+  RQ2: Are reductions more sensitive than elementwise ops?
+  RQ3: Does the ranking or feasibility of quantizers depend on the input?
+  RQ4: Can a cheap input descriptor predict budget violations on unseen inputs?
+
+hypotheses:
+  H1: For at least one operator and quantizer, error distributions differ between regimes beyond bootstrap uncertainty.
+  H2: sum, softmax and layer_norm show higher, more input-dependent amplification than gelu in at least one regime.
+  H3: The best scheme, or the cheapest scheme within an error budget, differs across regimes or sweep values.
+  H4: Some descriptor beats a constant predictor on held-out data, with an acceptable false-safe rate.
+
+environment:
+  device: cpu
+  num_threads: 1
+  deterministic_algorithms: true
+  autocast: false
+
+seeds:
+  # Per-sample seed (plan §7.1, widened to 64 bits):
+  #   int(sha256(f"{split}|{stratum_key}|{sample_id}").hexdigest()[:16], 16)
+  # stratum_key is the regime ID ("D1") for fixed regimes, and
+  # "<sweep_id>:<base_regime>=<value>" for sweep points, with value formatted by format(v, "g")
+  # (e.g. "S1:D1=20", "S3:D3=4096", "S5:D3=0.001"). Calibration tensors at a non-default
+  # length use "D0:n=<n>".
+  sample_seed_hex_digits: 16
+  matvec_weight_seed: 20261016   # Tier 2 (deferred)
+  bootstrap_seed: 20261017
+
+vector_length: 1024
+
+operators:
+  core: [sum, softmax, layer_norm, gelu]
+  tier2: [matvec, rms_norm]   # deferred
+  calls:
+    sum: "x.sum(dim=-1)"
+    softmax: "torch.softmax(x, dim=-1)"
+    layer_norm: "F.layer_norm(x, (x.shape[-1],), weight=None, bias=None, eps=1e-5)"
+    gelu: "F.gelu(x, approximate='none')"
+  layer_norm_eps: 1.0e-5
+
+regimes:
+  D0: {name: typical normal, scale: 1.0}
+  D1:
+    name: random outliers
+    outlier_rate: 0.01          # exactly round(rate * n) positions per sample
+    outlier_magnitude: 20.0     # positions are overwritten with sign * magnitude
+    # Signs balanced: k // 2 positive, k // 2 negative, one random sign when k is odd.
+  D2: {name: near-constant, offset: 1.0, noise_std: 0.001}
+  D3: {name: cancellation, sigma_delta: 0.01}   # n/2 values a ~ N(0,1) paired with -a + delta, shuffled
+  D4: {name: heavy-tailed, df: 3}               # Student-t(df) / sqrt(df / (df - 2)), unit variance
+  D5:
+    name: fixed outlier channels
+    n_channels: 8
+    channel_magnitude: 20.0     # x[c] = sign_c * magnitude + D0 value, i.e. ±20 + N(0, 1)
+    channel_seed: 20261015      # positions and signs fixed across all samples and splits
+    # Signs balanced like D1 (4 positive, 4 negative), assigned from the same channel seed.
+
+sweeps:
+  S1: {base: [D1], param: outlier_magnitude, values: [2, 5, 10, 20, 50, 100], operators: [sum, softmax, layer_norm, gelu]}
+  S2: {base: [D1], param: outlier_rate, values: [0.001, 0.005, 0.01, 0.02, 0.05], operators: [sum, softmax, layer_norm, gelu]}
+  S3: {base: [D0, D3], param: n, values: [256, 1024, 4096, 16384], operators: [sum, softmax, layer_norm, gelu]}
+  S4: {base: [D0], param: scale, values: [0.5, 1, 2, 4, 8], operators: [softmax]}
+  S5: {base: [D3], param: sigma_delta, values: [0.001, 0.01, 0.1, 1], operators: [sum]}   # matvec added in Tier 2
+
+quantizers:
+  # Signed, symmetric, uniform, round-half-even, saturating, zero point 0. Scale floor 1e-12.
+  # Scales are kept in FP32 for every quantizer; Q2's 4.5 effective bits is cost accounting
+  # for an FP16 scale per group, not simulated.
+  Q0: {label: A8-PT, bits: 8, group_size: null, effective_bits: 8.0}
+  Q1: {label: A4-PT, bits: 4, group_size: null, effective_bits: 4.0}
+  Q2: {label: A4-PG32, bits: 4, group_size: 32, effective_bits: 4.5}   # group size pending supervisor
+  scale_floor: 1.0e-12
+  clip_tolerance: 1.0e-6   # |x| > qmax * s * (1 + tol) counts as clipped, so a dynamic absmax element is not
+
+calibration:
+  policies: [static, dynamic]   # both primary, pending supervisor
+  static:
+    source_regime: D0
+    n_tensors: 512
+    statistic: absmax
+    scale_file: artifacts/calibration/scales.pt
+    recalibrate_per_length: [S3]
+  dynamic:
+    statistic: absmax
+
+references:
+  primary: fp32
+  floor: fp64
+  at_floor_factor: 10
+
+metrics:
+  compute_dtype: float64
+  probability_clamp: 1.0e-12   # KL uses clamped, renormalised FP64 distributions (KL >= 0)
+  norm_l2_eps: 1.0e-12
+  kappa_null_ref_norm: 1.0e-12
+  collapsed_output_std: 1.0e-3
+  kurtosis: excess        # m4 / m2^2 - 3; a normal gives 0
+  # 1 when the set of argmax indices of the quantized output differs from the reference's.
+  # With a unique reference top-1 this means "changed unless it is the unique quantized maximum",
+  # so ties created by coarse codes count as changed.
+  top1_changed: argmax_set_differs
+  primary:
+    sum: abs_error
+    softmax: softmax_kl
+    layer_norm: norm_l2
+    gelu: norm_l2
+
+splits:
+  pilot: {per_regime: 100, sweeps: false}
+  pilot_calibration: {n_tensors: 512}   # throwaway static scales for the pilot only, never saved
+  calibration: {n_tensors: 512}
+  development: {per_regime: 200, per_sweep_point: 50}
+  heldout: {per_regime: 300, per_sweep_point: 100}
+
+budgets:   # pending supervisor; frozen on development data before held-out analysis
+  strict: {sqnr_db_min: 30, softmax_kl_max: 1.0e-3, softmax_top1_unchanged: true, sum_l1_norm_error_max: 1.0e-3}
+  loose:  {sqnr_db_min: 20, softmax_kl_max: 1.0e-3, softmax_top1_unchanged: true, sum_l1_norm_error_max: 1.0e-3}
+  feasible_fraction: 0.95
+
+analysis:
+  bootstrap_resamples: 2000
+  ci_level: 0.95
+  multiple_comparisons: holm
