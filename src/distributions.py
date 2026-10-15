@@ -1,8 +1,8 @@
-"""Input regimes D0-D5 and their sweep variants (plan §4), with the per-sample seed rule (§7.1).
+"""Input distributions D0-D5 (plan §2) and the per-sample seed rule.
 
 Every tensor is generated in FP32 from its own torch.Generator; the global RNG is never used.
 The order of random draws inside each generator is part of the definition: changing it
-changes every tensor, so treat it as frozen once Gate 1 has run.
+changes every tensor (the pinned-hash test will fail).
 """
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ import torch
 DTYPE = torch.float32
 
 
-def sample_seed(split: str, stratum_key: str, sample_id: int, hex_digits: int = 16) -> int:
-    digest = hashlib.sha256(f"{split}|{stratum_key}|{sample_id}".encode()).hexdigest()
+def sample_seed(regime: str, sample_id: int, hex_digits: int = 16) -> int:
+    digest = hashlib.sha256(f"{regime}|{sample_id}".encode()).hexdigest()
     return int(digest[:hex_digits], 16)
 
 
@@ -41,13 +41,12 @@ def balanced_signs(k: int, g: torch.Generator) -> torch.Tensor:
     return signs[torch.randperm(k, generator=g)]
 
 
-def d0(n: int, g: torch.Generator, scale: float = 1.0) -> torch.Tensor:
+def d0(n: int, g: torch.Generator) -> torch.Tensor:
+    return randn(n, g)
+
+
+def d1(n: int, g: torch.Generator, outlier_rate: float, outlier_magnitude: float) -> torch.Tensor:
     x = randn(n, g)
-    return x if scale == 1.0 else x * scale
-
-
-def d1(n: int, g: torch.Generator, outlier_rate: float, outlier_magnitude: float, scale: float = 1.0) -> torch.Tensor:
-    x = d0(n, g, scale)
     k = round(outlier_rate * n)
     if k == 0:
         return x
@@ -82,14 +81,14 @@ def d4(n: int, g: torch.Generator, df: int) -> torch.Tensor:
 
 @lru_cache(maxsize=None)
 def d5_channels(n: int, n_channels: int, channel_seed: int) -> tuple[torch.Tensor, torch.Tensor]:
-    """Fixed outlier channel positions and signs, identical for every sample and split."""
+    """Fixed outlier channel positions and signs, identical for every sample."""
     g = make_generator(channel_seed)
     pos = torch.randperm(n, generator=g)[:n_channels]
     return pos, balanced_signs(n_channels, g)
 
 
 def d5(n: int, g: torch.Generator, n_channels: int, channel_magnitude: float, channel_seed: int) -> torch.Tensor:
-    x = d0(n, g)
+    x = randn(n, g)
     pos, signs = d5_channels(n, n_channels, channel_seed)
     x[pos] += signs * channel_magnitude
     return x
@@ -102,7 +101,3 @@ def generate(regime: str, n: int, params: dict, seed: int) -> torch.Tensor:
     x = GENERATORS[regime](n, make_generator(seed), **params)
     assert x.dtype == DTYPE and x.shape == (n,)
     return x
-
-
-def generate_stratum(stratum, seed: int) -> torch.Tensor:
-    return generate(stratum.regime, stratum.n, stratum.params, seed)
