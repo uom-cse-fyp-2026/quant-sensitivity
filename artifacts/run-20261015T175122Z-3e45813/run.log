@@ -1,0 +1,14 @@
+2026-10-15 23:21:22,934 INFO run run-20261015T175122Z-3e45813 (commit 3e45813)
+2026-10-15 23:21:27,152 INFO 300 tensors, 3600 rows, 4.2s
+2026-10-15 23:21:30,179 INFO 600 tensors, 7200 rows, 7.2s
+2026-10-15 23:21:33,309 INFO 900 tensors, 10800 rows, 10.4s
+2026-10-15 23:21:35,827 INFO 1200 tensors, 14400 rows, 12.9s
+2026-10-15 23:21:38,964 INFO 1500 tensors, 18000 rows, 16.0s
+2026-10-15 23:21:43,658 INFO 1800 tensors, 21600 rows, 20.7s
+2026-10-15 23:21:43,681 INFO rows 21600 / expected 21600 (missing 0, unexpected 0), non-finite 0, 20.8s
+2026-10-15 23:21:57,744 INFO wrote summary/summary.csv
+2026-10-15 23:21:57,744 INFO wrote summary/summary.md
+2026-10-15 23:21:57,744 INFO wrote plots/F1_inputs.png
+2026-10-15 23:21:57,745 INFO wrote plots/F2_error_heatmap.png
+2026-10-15 23:21:57,745 INFO wrote plots/F3_amplification.png
+2026-10-15 23:21:57,745 INFO done: OK -> /home/deepthi/quant-sensitivity/artifacts/run-20261015T175122Z-3e45813
