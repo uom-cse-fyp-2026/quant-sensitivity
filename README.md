@@ -12,45 +12,47 @@ input needs.
 ## Running on the VM
 
 The VM is shared, so everything stays inside your home directory: no sudo, no system
-packages, no global config. uv installs to `~/.local/bin`, and the project uses uv's own
-standalone Python 3.12 (under `~/.local/share/uv/python`), never the system interpreter.
+packages, no global config. uv and just install to `~/.local/bin`, and the project uses
+uv's own standalone Python 3.12, never the system interpreter.
 
-One-time uv install:
+One-time setup:
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-Then:
-
 ```bash
-git clone git@github.com:uom-cse-fyp-2026/quant-sensitivity.git
-cd quant-sensitivity
-uv sync --locked
-uv run pytest
+uv tool install rust-just
 ```
 
-### Running in the background
-
-Long runs go through `scripts/run_bg.sh`, which detaches the command from the SSH session
-(`nohup` + `setsid`), so you can close the connection while it runs. Output goes to
-`logs/<name>-<UTC time>.log`, ending with the exit status.
-
-Gate 0 pilot (100 tensors per regime, about a minute including plots):
-
 ```bash
-scripts/run_bg.sh pilot uv run python -m src.run_experiment --config configs/experiment.yaml --gate 0
+git clone git@github.com:uom-cse-fyp-2026/quant-sensitivity.git && cd quant-sensitivity && just pull
 ```
 
-Check on it later (after reconnecting, from `~/quant-sensitivity`):
+### Commands
 
-```bash
-scripts/status.sh pilot
-```
+Run `just` to list them. From `~/quant-sensitivity`:
 
-Stop it early with `kill $(cat logs/pilot.pid)`.
+| Command | What it does |
+| --- | --- |
+| `just pull` | Get the latest code and update the environment |
+| `just test` | Run the unit tests |
+| `just run` | Run the pilot (gate 0) inside tmux; `just run 1` for gate 1, and so on |
+| `just pull-run` | Pull, update, test, then run |
+| `just attach` (or `just fg`) | Bring the running job back to the foreground |
+| `just status` | Is a run going? Shows the end of the newest run log |
+| `just log` | Follow the newest run log live |
+| `just stop` | Stop a running job |
+| `just push` | Commit and push the newest finished run |
+| `just runs` | List the runs on this machine |
 
-The run writes `artifacts/pilot-<UTC time>-<commit>/` with:
+Runs happen in a tmux session, so press **Ctrl+B then D** to detach and close SSH whenever you
+like. Reconnect and type `just attach` to see it again. When the run finishes, the window
+shows the exit status and waits for Enter.
+
+### What a pilot run writes
+
+`artifacts/pilot-<UTC time>-<commit>/` with:
 
 - `raw/pilot.csv`: one row per (regime, sample, operator, quantizer, policy), 14,400 rows
 - `manifest.json`: commit, machine, versions, checksums, row and non-finite counts
@@ -61,16 +63,8 @@ The run writes `artifacts/pilot-<UTC time>-<commit>/` with:
 The run exits non-zero if any row is missing or non-finite. Pilot numbers are for
 debugging only and are never reported.
 
-## Sending results back
-
-When `scripts/status.sh` shows `exit status 0`, commit and push the newest run folder (raw
-CSVs are gzipped first; run outputs are gitignored, so the script adds them with `-f`):
-
-```bash
-scripts/push_results.sh
-```
-
-Or copy a run to the laptop without git:
+`just push` gzips the raw CSV, commits the run folder (run outputs are gitignored, so it adds
+them with `-f`), rebases onto any newer code, and pushes. To copy a run without git instead:
 
 ```bash
 scp -r <user>@<vm-host>:~/quant-sensitivity/artifacts/<run_id> ./artifacts/
