@@ -1,0 +1,16 @@
+2026-10-15 11:33:18,604 INFO run pilot-20261015T060318Z-3db84b5 (commit 3db84b5)
+2026-10-15 11:33:18,698 INFO pilot static scale n=1024 Q0: 0.0392788
+2026-10-15 11:33:18,698 INFO pilot static scale n=1024 Q1: 0.712629
+2026-10-15 11:33:18,699 INFO pilot static scale n=1024 Q2: 32 groups, 0.531..0.7126
+2026-10-15 11:33:21,112 INFO pilot: 100 tensors, 2400 rows, 2.4s
+2026-10-15 11:33:23,835 INFO pilot: 200 tensors, 4800 rows, 5.1s
+2026-10-15 11:33:26,253 INFO pilot: 300 tensors, 7200 rows, 7.6s
+2026-10-15 11:33:28,938 INFO pilot: 400 tensors, 9600 rows, 10.2s
+2026-10-15 11:33:31,399 INFO pilot: 500 tensors, 12000 rows, 12.7s
+2026-10-15 11:33:34,716 INFO pilot: 600 tensors, 14400 rows, 16.0s
+2026-10-15 11:33:34,739 INFO pilot rows 14400 / expected 14400 (missing 0, unexpected 0), non-finite 0, infinite SQNR 0, 16.0s
+2026-10-15 11:33:41,664 INFO wrote plots/pilot_histograms.png
+2026-10-15 11:33:41,664 INFO wrote summary/regime_stats.csv
+2026-10-15 11:33:41,664 INFO wrote summary/pilot_medians.csv
+2026-10-15 11:33:41,664 INFO wrote summary/pilot_predictions_check.md
+2026-10-15 11:33:41,691 INFO done: OK -> /home/deepthi/quant-sensitivity/artifacts/pilot-20261015T060318Z-3db84b5
