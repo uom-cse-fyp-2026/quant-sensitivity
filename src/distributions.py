@@ -23,6 +23,15 @@ def make_generator(seed: int) -> torch.Generator:
     return torch.Generator(device="cpu").manual_seed(seed)
 
 
+def randn(n: int, g: torch.Generator) -> torch.Tensor:
+    """Standard normals drawn in FP64, then rounded to FP32.
+
+    torch's FP32 randn uses platform float math and differed in the last bit between the
+    Linux VM and a Windows laptop; the FP64 draw and the FP64 -> FP32 cast were bit-identical.
+    """
+    return torch.randn(n, generator=g, dtype=torch.float64).to(DTYPE)
+
+
 def balanced_signs(k: int, g: torch.Generator) -> torch.Tensor:
     """k // 2 positive and k // 2 negative signs in random order, plus one random sign if k is odd."""
     signs = [1.0] * (k // 2) + [-1.0] * (k // 2)
@@ -33,7 +42,7 @@ def balanced_signs(k: int, g: torch.Generator) -> torch.Tensor:
 
 
 def d0(n: int, g: torch.Generator, scale: float = 1.0) -> torch.Tensor:
-    x = torch.randn(n, generator=g, dtype=DTYPE)
+    x = randn(n, g)
     return x if scale == 1.0 else x * scale
 
 
@@ -48,14 +57,14 @@ def d1(n: int, g: torch.Generator, outlier_rate: float, outlier_magnitude: float
 
 
 def d2(n: int, g: torch.Generator, offset: float, noise_std: float) -> torch.Tensor:
-    return offset + noise_std * torch.randn(n, generator=g, dtype=DTYPE)
+    return offset + noise_std * randn(n, g)
 
 
 def d3(n: int, g: torch.Generator, sigma_delta: float) -> torch.Tensor:
     if n % 2:
         raise ValueError("D3 needs an even length")
-    a = torch.randn(n // 2, generator=g, dtype=DTYPE)
-    delta = sigma_delta * torch.randn(n // 2, generator=g, dtype=DTYPE)
+    a = randn(n // 2, g)
+    delta = sigma_delta * randn(n // 2, g)
     x = torch.cat([a, -a + delta])
     return x[torch.randperm(n, generator=g)]
 

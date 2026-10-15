@@ -130,3 +130,27 @@ def test_heldout_tensors_not_in_other_splits(cfg):
     held = digests("heldout")
     assert held.isdisjoint(digests("development"))
     assert held.isdisjoint(digests("calibration"))
+
+
+# sha256 (first 16 hex digits) of the first 3 pilot tensors per stratum. Inputs are drawn in
+# FP64 and rounded to FP32, so these must match on every machine (laptop and VM alike).
+PINNED_INPUT_HASHES = {
+    "D0": "95c60dec66e422ec",
+    "D1": "9eee615675357434",
+    "D2": "a7d6a9f8e12b3dfc",
+    "D3": "9b92bc94603d6f84",
+    "D4": "67310815430f29c7",
+    "D5": "d2e89d228ab970f2",
+    "S3:D3=16384": "2562817d6ec89a81",
+    "S4:D0=8": "42bad4845808ba88",
+}
+
+
+@pytest.mark.parametrize("key", list(PINNED_INPUT_HASHES))
+def test_inputs_match_pinned_hashes(cfg, key):
+    import hashlib
+    st = strata_by_key(cfg)[key]
+    h = hashlib.sha256()
+    for i in range(3):
+        h.update(generate_stratum(st, sample_seed("pilot", key, i)).numpy().tobytes())
+    assert h.hexdigest()[:16] == PINNED_INPUT_HASHES[key], "input tensors differ from the pinned machine-independent values"
