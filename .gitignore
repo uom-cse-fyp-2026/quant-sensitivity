@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Raw run outputs are large; they come back from the VM by scp, not git.
+artifacts/*/raw/
+artifacts/*/run.log
+artifacts/pilot*/
+*.pt
+!artifacts/calibration/scales.pt

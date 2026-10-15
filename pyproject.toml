@@ -1,0 +1,29 @@
+[project]
+name = "quant-sensitivity"
+version = "0.1.0"
+description = "NeuroMinds Stage 1: activation fake-quantization sensitivity study"
+requires-python = "==3.12.*"
+dependencies = [
+    "torch>=2.4",
+    "numpy>=1.26",
+    "pyyaml>=6.0",
+    "pandas>=2.2",
+    "matplotlib>=3.8",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+# CPU-only PyTorch wheels on every platform (the VM has no GPU; avoids pulling CUDA).
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
