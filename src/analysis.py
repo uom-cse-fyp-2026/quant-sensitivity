@@ -29,7 +29,7 @@ from src.config import DEFAULT_CONFIG, ROOT, load_config, planned_samples  # noq
 from src.distributions import generate  # noqa: E402
 from src.metrics import HEADLINE  # noqa: E402
 
-# Reference palette (dataviz skill), light mode. Categorical slots in fixed order, one per operator.
+# Figure palette, light mode: one fixed colour and marker per operator across all figures.
 SURFACE, TEXT, TEXT_2, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df"
 OP_COLOR = {"sum": "#2a78d6", "softmax": "#eb6834", "layer_norm": "#1baf7a", "gelu": "#eda100"}
 OP_MARKER = {"sum": "o", "softmax": "s", "layer_norm": "^", "gelu": "D"}
@@ -37,6 +37,7 @@ METRIC_LABEL = {"l1_norm_error": "|ΔY| / ‖A‖₁", "softmax_kl": "KL(Y ‖ Y
 
 
 def load_results(run_dir: Path) -> pd.DataFrame:
+    """Read a run's raw results, plain or gzipped (as pushed from the VM)."""
     for name in ("results.csv", "results.csv.gz"):
         if (run_dir / "raw" / name).exists():
             return pd.read_csv(run_dir / "raw" / name)
@@ -53,6 +54,11 @@ def median_ci(v: np.ndarray, rng: np.random.Generator, resamples: int, level: fl
 
 
 def summarize(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """One row per operator x distribution x scheme with medians, quantiles and CIs.
+
+    The headline error and kappa are summarised separately; kappa excludes rows flagged as
+    FP32 noise, and the number excluded is kept so it can be reported.
+    """
     rng = np.random.default_rng(cfg["seeds"]["bootstrap_seed"])
     B, level = cfg["analysis"]["bootstrap_resamples"], cfg["analysis"]["ci_level"]
     rows = []
@@ -100,10 +106,12 @@ def ranking(s: pd.DataFrame, op: str, regime: str) -> str:
 
 
 def fmt(v: float) -> str:
+    """Scientific notation for tables, with a dash for missing values."""
     return "—" if v is None or (isinstance(v, float) and math.isnan(v)) else f"{v:.2e}"
 
 
 def write_markdown(s: pd.DataFrame, df: pd.DataFrame, cfg: dict, manifest: dict, path: Path) -> Path:
+    """Write summary.md: loss of precision, the kappa sensitivity check, scheme ranking, top-1 changes."""
     regimes, qs, ops = list(cfg["regimes"]), list(cfg["quantizers"]), list(cfg["operators"])
     c = manifest.get("counts", {})
     L = [f"# Quantization sensitivity results: {manifest.get('run_id', path.parent.parent.name)}", "",
@@ -166,6 +174,7 @@ def write_markdown(s: pd.DataFrame, df: pd.DataFrame, cfg: dict, manifest: dict,
 
 
 def _style(ax):
+    """Shared axis styling: light surface, no top/right spines, recessive grid."""
     ax.set_facecolor(SURFACE)
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
@@ -177,6 +186,7 @@ def _style(ax):
 
 
 def plot_inputs(cfg: dict, samples: int, path: Path, run_id: str) -> Path:
+    """F1: histogram of each distribution, regenerated from the same seeds as the run."""
     pooled: dict[str, list[torch.Tensor]] = {}
     for regime, params, _, seed in planned_samples(cfg, samples):
         pooled.setdefault(regime, []).append(generate(regime, cfg["vector_length"], params, seed))
@@ -200,6 +210,10 @@ def plot_inputs(cfg: dict, samples: int, path: Path, run_id: str) -> Path:
 
 
 def plot_heatmap(s: pd.DataFrame, cfg: dict, path: Path, run_id: str, samples: int) -> Path:
+    """F2: median headline error per distribution x scheme, one panel and colour scale per operator.
+
+    Each operator has its own metric, so panels never share a colour scale.
+    """
     regimes, qs, ops = list(cfg["regimes"]), list(cfg["quantizers"]), list(cfg["operators"])
     fig, axes = plt.subplots(1, len(ops), figsize=(4.2 * len(ops), 4.6), facecolor=SURFACE)
     for ax, op in zip(axes, ops):
@@ -234,6 +248,7 @@ def plot_heatmap(s: pd.DataFrame, cfg: dict, path: Path, run_id: str, samples: i
 
 
 def plot_amplification(s: pd.DataFrame, cfg: dict, path: Path, run_id: str, samples: int) -> Path:
+    """F3: median kappa with IQR by operator and distribution, one panel per scheme (log scale)."""
     regimes, qs, ops = list(cfg["regimes"]), list(cfg["quantizers"]), list(cfg["operators"])
     fig, axes = plt.subplots(1, len(qs), figsize=(5.2 * len(qs), 4.4), facecolor=SURFACE, sharey=True)
     width = 0.18
@@ -263,6 +278,7 @@ def plot_amplification(s: pd.DataFrame, cfg: dict, path: Path, run_id: str, samp
 
 
 def analyze(run_dir: Path, cfg: dict) -> list[Path]:
+    """Produce every table and figure for a run folder and return the paths written."""
     run_dir = Path(run_dir)
     df = load_results(run_dir)
     manifest_path = run_dir / "manifest.json"
@@ -284,6 +300,7 @@ def analyze(run_dir: Path, cfg: dict) -> list[Path]:
 
 
 def main(argv=None) -> int:
+    """Command-line entry point: analyse an existing run folder."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--run", required=True, help="run folder, or a run id under artifacts/")
     ap.add_argument("--config", type=Path, default=DEFAULT_CONFIG)

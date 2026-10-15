@@ -35,17 +35,20 @@ from src.quantization import quantize, quantizers_from_config
 
 log = logging.getLogger("run_experiment")
 
+# Float-valued metric columns checked for NaN before a row is accepted.
 FLOAT_METRICS = ("abs_error", "l1_norm_error", "norm_l2", "sqnr_db", "mae", "max_abs_error",
                  "softmax_kl", "kappa", "input_rel_l2", "fp32_noise")
 
 
 def git_state() -> tuple[str, bool]:
+    """Current commit hash and whether tracked files have uncommitted changes."""
     def git(*args):
         return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True).stdout.strip()
     return git("rev-parse", "HEAD") or "unknown", bool(git("status", "--porcelain", "--untracked-files=no"))
 
 
 def machine_info() -> dict:
+    """Hardware and library versions for the manifest, so results can be traced to a machine."""
     cpu = platform.processor() or "unknown"
     cpuinfo = Path("/proc/cpuinfo")
     if cpuinfo.exists():
@@ -61,6 +64,7 @@ def machine_info() -> dict:
 
 
 def setup_logging(out_dir: Path) -> None:
+    """Log to both the console and the run folder's run.log."""
     log.setLevel(logging.INFO)
     log.handlers.clear()
     fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
@@ -72,6 +76,7 @@ def setup_logging(out_dir: Path) -> None:
 def sample_rows(ids: dict, regime: str, sample_id: int, seed: int, x: torch.Tensor,
                 operators: list[str], qzs: dict) -> list[dict]:
     """Every row for one input A: the baseline once per operator, quantization once per scheme."""
+    # Each scheme quantizes the input once; the result is reused for every operator.
     quant = {qid: quantize(x, qz) for qid, qz in qzs.items()}
     rows = []
     for op in operators:
@@ -92,6 +97,12 @@ def is_non_finite(row: dict) -> bool:
 
 
 def run(cfg: dict, config_path: Path, out_root: Path, samples: int | None, analysis: bool) -> int:
+    """Run the full experiment into a new artifacts/<run_id>/ folder.
+
+    Streams one CSV row per (distribution, sample, operator, scheme), checks the written rows
+    against the expected set, writes the manifest, and optionally runs the analysis.
+    Returns the process exit code: 0 when every row is present and finite, 1 otherwise.
+    """
     commit, dirty = git_state()
     run_id = f"run-{dt.datetime.now(dt.UTC):%Y%m%dT%H%M%SZ}-{commit[:7]}"
     out_dir = out_root / run_id
@@ -112,6 +123,7 @@ def run(cfg: dict, config_path: Path, out_root: Path, samples: int | None, analy
         for regime, params, i, seed in planned_samples(cfg, samples):
             x = generate(regime, n, params, seed)
             for row in sample_rows(ids, regime, i, seed, x, operators, qzs):
+                # Guard against writing the same result twice.
                 key = (regime, i, row["operator"], row["quantizer"])
                 if key in seen:
                     raise RuntimeError(f"duplicate row {key}")
@@ -123,6 +135,7 @@ def run(cfg: dict, config_path: Path, out_root: Path, samples: int | None, analy
             if counts["tensors"] % 300 == 0:
                 log.info("%d tensors, %d rows, %.1fs", counts["tensors"], counts["rows"], time.perf_counter() - t0)
 
+    # Completeness check: every planned row written, and nothing unplanned.
     expected = expected_row_keys(cfg, samples)
     counts.update(expected_rows=len(expected), missing_rows=len(expected - seen),
                   unexpected_rows=len(seen - expected), seconds=round(time.perf_counter() - t0, 2))
@@ -152,6 +165,7 @@ def run(cfg: dict, config_path: Path, out_root: Path, samples: int | None, analy
 
 
 def main(argv=None) -> int:
+    """Command-line entry point: parse arguments, configure PyTorch, run."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     ap.add_argument("--out-root", type=Path, default=ROOT / "artifacts")

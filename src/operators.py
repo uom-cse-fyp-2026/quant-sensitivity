@@ -16,6 +16,7 @@ LAYER_NORM_EPS = 1e-5
 
 @dataclass(frozen=True)
 class Operator:
+    """An operator under test and how its output is shaped."""
     name: str
     fn: Callable[[torch.Tensor], torch.Tensor]
     kind: str      # "reduction" or "elementwise"
@@ -23,18 +24,25 @@ class Operator:
 
 
 def _sum(x):
+    """Reduction: errors accumulate over all terms and grow relative to a near-zero sum."""
     return x.sum(dim=-1)
 
 
 def _softmax(x):
+    """Non-linear reduction: exp magnifies logit errors and the normaliser couples all values."""
     return torch.softmax(x, dim=-1)
 
 
 def _layer_norm(x):
+    """Normalisation: the mean and variance couple all values; a small variance amplifies error.
+
+    No affine weight or bias, and the normalised shape follows the input length.
+    """
     return F.layer_norm(x, (x.shape[-1],), weight=None, bias=None, eps=LAYER_NORM_EPS)
 
 
 def _gelu(x):
+    """Elementwise control: each output depends only on its own input (exact erf form)."""
     return F.gelu(x, approximate="none")
 
 
@@ -47,11 +55,16 @@ OPERATORS = {
 
 
 def apply(name: str, x: torch.Tensor) -> torch.Tensor:
+    """Run an operator by name, in the precision of its input."""
     return OPERATORS[name].fn(x)
 
 
 def baselines(name: str, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-    """Y = Op(A, NoQuant) in FP32 (the baseline), and Op(A) in FP64 (to measure FP32 noise)."""
+    """Y = Op(A, NoQuant) in FP32 (the baseline), and Op(A) in FP64 (to measure FP32 noise).
+
+    The FP64 result is used only to estimate the baseline's own rounding error; every
+    quantized output is compared with the FP32 baseline.
+    """
     if x.dtype != torch.float32:
         raise ValueError("baselines expect the FP32 input tensor")
     return apply(name, x), apply(name, x.double())
