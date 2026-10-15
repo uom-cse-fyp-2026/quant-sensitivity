@@ -28,7 +28,10 @@ which quantizer an input needs. Null results are valid. Never tune on held-out d
 
 ## Where things run
 - Code is written and unit-tested locally or on the VM; all reported runs (pilot, Gates 1-6) execute on the VM.
-- Long runs go in tmux and log to artifacts/<run_id>/run.log.
+- The VM is shared with other users: user-local commands only (no sudo, no global config).
+- Long runs go in the background via scripts/run_bg.sh <name> <command...> so SSH can close;
+  check with scripts/status.sh <name>. Each run also logs to artifacts/<run_id>/run.log.
+- Finished runs are pushed from the VM with scripts/push_results.sh (gzips raw CSVs).
 - Raw CSVs stay out of git (artifacts/*/raw/ is gitignored). Summaries, figures and manifests are committed.
 - Results come back to the laptop with scp (see README "Pulling results from the VM").
 

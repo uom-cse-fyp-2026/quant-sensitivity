@@ -26,17 +26,29 @@ Then:
 ```bash
 git clone git@github.com:uom-cse-fyp-2026/quant-sensitivity.git
 cd quant-sensitivity
-uv sync
+uv sync --locked
 uv run pytest
 ```
 
-Gate 0 pilot (100 tensors per regime, about a minute including plots). Use tmux so an SSH
-drop does not kill the run:
+### Running in the background
+
+Long runs go through `scripts/run_bg.sh`, which detaches the command from the SSH session
+(`nohup` + `setsid`), so you can close the connection while it runs. Output goes to
+`logs/<name>-<UTC time>.log`, ending with the exit status.
+
+Gate 0 pilot (100 tensors per regime, about a minute including plots):
 
 ```bash
-tmux new -s pilot
-uv run python -m src.run_experiment --config configs/experiment.yaml --gate 0
+scripts/run_bg.sh pilot uv run python -m src.run_experiment --config configs/experiment.yaml --gate 0
 ```
+
+Check on it later (after reconnecting, from `~/quant-sensitivity`):
+
+```bash
+scripts/status.sh pilot
+```
+
+Stop it early with `kill $(cat logs/pilot.pid)`.
 
 The run writes `artifacts/pilot-<UTC time>-<commit>/` with:
 
@@ -46,15 +58,20 @@ The run writes `artifacts/pilot-<UTC time>-<commit>/` with:
 - `plots/pilot_histograms.png`, `summary/regime_stats.csv`, `summary/pilot_medians.csv`,
   `summary/pilot_predictions_check.md`
 
-The command exits non-zero if any row is missing or non-finite. Pilot numbers are for
+The run exits non-zero if any row is missing or non-finite. Pilot numbers are for
 debugging only and are never reported.
 
-## Pulling results from the VM
+## Sending results back
 
-Copy a finished run back to the laptop with:
+When `scripts/status.sh` shows `exit status 0`, commit and push the newest run folder (raw
+CSVs are gzipped first; run outputs are gitignored, so the script adds them with `-f`):
+
+```bash
+scripts/push_results.sh
+```
+
+Or copy a run to the laptop without git:
 
 ```bash
 scp -r <user>@<vm-host>:~/quant-sensitivity/artifacts/<run_id> ./artifacts/
 ```
-
-Raw CSVs and logs stay out of git.

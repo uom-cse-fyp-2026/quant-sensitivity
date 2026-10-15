@@ -10,3 +10,4 @@ artifacts/*/run.log
 artifacts/pilot*/
 *.pt
 !artifacts/calibration/scales.pt
+logs/
