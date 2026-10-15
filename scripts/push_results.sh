@@ -19,7 +19,12 @@ git add -f "$run"
 if git diff --cached --quiet; then
     echo "$run is already committed"
 else
-    git commit -q -m "Add results from VM: $(basename "$run")"
+    if [ "$(basename "$run")" = calibration ]; then
+        sha=$(grep -o '"static_scale_checksum": "[0-9a-f]*' "$run/manifest.json" | cut -d'"' -f4)
+        git commit -q -m "Gate 1: freeze static calibration scales (sha256 ${sha:0:12})"
+    else
+        git commit -q -m "Add results from VM: $(basename "$run")"
+    fi
 fi
 # Pick up code pushed from the laptop meanwhile; results only add new files, so this is clean.
 git pull --rebase --quiet

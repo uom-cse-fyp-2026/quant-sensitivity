@@ -70,6 +70,14 @@ log:
 stop:
     tmux kill-session -t {{session}}
 
+# Gate 1: freeze the static calibration scales (takes seconds; needs a clean git tree)
+freeze:
+    uv run python -m src.run_experiment --config {{config}} --gate 1
+
+# Commit and push the frozen scales from Gate 1
+push-scales:
+    scripts/push_results.sh artifacts/calibration
+
 # Commit and push the newest finished run (or one you name: just push artifacts/<run_id>)
 push run="":
     scripts/push_results.sh {{run}}

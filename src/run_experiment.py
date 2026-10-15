@@ -5,10 +5,12 @@
 Gate 0 is the pilot: 100 tensors per regime through every operator, quantizer and
 calibration policy. Its static policy uses throwaway scales from a separate
 pilot-calibration set that are never saved, so the frozen Gate 1 scales stay untouched.
-Pilot numbers are for debugging only and are never reported.
+Pilot numbers are for debugging only and are never reported. Each pilot run writes
+artifacts/<run_id>/ with raw/pilot.csv, manifest.json, run.log, sanity plots and summaries.
 
-Each run writes artifacts/<run_id>/ with raw/<split>.csv, manifest.json, run.log,
-and (for the pilot) sanity plots and summaries.
+Gate 1 freezes the static scales: absmax over the 512 D0 calibration tensors at each
+length, saved once to artifacts/calibration/scales.pt with a checksum. It refuses to run
+on a dirty git tree and refuses to overwrite existing scales.
 """
 from __future__ import annotations
 
@@ -183,6 +185,38 @@ def run_split(cfg: dict, split: str, out_dir: Path, ids: dict, static_scales: di
     return stats
 
 
+def scales_summary(scales: dict) -> dict:
+    return {f"n={n} {qid}": ({"value": s.item()} if s.numel() == 1 else
+                             {"groups": s.numel(), "min": s.min().item(), "max": s.max().item()})
+            for (n, qid), s in sorted(scales.items())}
+
+
+def save_static_scales(path: Path, scales: dict, meta: dict) -> str:
+    """Save frozen scales (keys "<n>|<quantizer>") and return the file's SHA-256."""
+    torch.save({"scales": {f"{n}|{qid}": s.detach().clone() for (n, qid), s in sorted(scales.items())},
+                "meta": meta}, path)
+    return file_checksum(path)
+
+
+def load_static_scales(path: Path) -> tuple[dict, dict]:
+    """Load frozen scales as {(n, quantizer): tensor} plus their metadata."""
+    obj = torch.load(path, weights_only=True)
+    scales = {}
+    for key, s in obj["scales"].items():
+        n, qid = key.split("|")
+        scales[(int(n), qid)] = s
+    return scales, obj["meta"]
+
+
+def calibration_leakage(cfg: dict) -> dict:
+    """Seeds of calibration tensors must not appear in any other split."""
+    cal = {seed for _, _, seed in planned_samples(cfg, "calibration")}
+    other = {seed for split in ("pilot", "pilot_calibration", "development", "heldout")
+             for _, _, seed in planned_samples(cfg, split)}
+    return {"calibration_tensors": len(cal), "other_split_tensors": len(other),
+            "overlapping_seeds": len(cal & other)}
+
+
 def write_manifest(out_dir: Path, **fields) -> None:
     (out_dir / "manifest.json").write_text(json.dumps(fields, indent=2, default=str), encoding="utf-8")
 
@@ -237,21 +271,91 @@ def run_pilot(cfg: dict, config_path: Path, out_root: Path, samples: int | None,
     return 0 if ok else 1
 
 
+def run_freeze(cfg: dict, config_path: Path, out_root: Path, allow_dirty: bool) -> int:
+    commit, dirty = git_state()
+    if dirty and not allow_dirty:
+        print("refusing to freeze scales on a dirty git tree; commit or stash first", file=sys.stderr)
+        return 2
+    calib_dir = out_root / "calibration"
+    scale_path = calib_dir / "scales.pt"
+    if scale_path.exists():
+        print(f"{scale_path} already exists: static scales are frozen and are never recomputed. "
+              "If they truly must change, delete the folder by hand and log a deviation in "
+              "reports/findings.md.", file=sys.stderr)
+        return 2
+    calib_dir.mkdir(parents=True, exist_ok=True)
+    setup_logging(calib_dir)
+    run_id = make_run_id("calibration", commit)
+    log.info("run %s (commit %s%s)", run_id, commit[:7], ", dirty tree" if dirty else "")
+    t0 = time.perf_counter()
+
+    leakage = calibration_leakage(cfg)
+    log.info("leakage check: %s", leakage)
+    if leakage["overlapping_seeds"]:
+        log.error("calibration seeds overlap other splits; not freezing")
+        return 1
+    if {st.regime for st, _, _ in planned_samples(cfg, "calibration")} != {cfg["calibration"]["static"]["source_regime"]}:
+        log.error("calibration split contains a regime other than the configured source regime")
+        return 1
+
+    qzs = quantizers_from_config(cfg)
+    scales = compute_static_scales(cfg, "calibration", qzs)
+    per_length = {}
+    for st, _, _ in planned_samples(cfg, "calibration"):
+        per_length[st.n] = per_length.get(st.n, 0) + 1
+    for (n, qid), sc in sorted(scales.items()):
+        log.info("static scale n=%d %s: %s", n, qid,
+                 f"{sc.item():.6g}" if sc.numel() == 1 else f"{sc.numel()} groups, {sc.min():.4g}..{sc.max():.4g}")
+    if not all(torch.isfinite(sc).all() and (sc > 0).all() for sc in scales.values()):
+        log.error("non-finite or non-positive scale; not freezing")
+        return 1
+
+    meta = {"run_id": run_id, "git_commit": commit, "config_checksum": file_checksum(config_path),
+            "tensors_per_length": {str(n): k for n, k in sorted(per_length.items())}}
+    checksum = save_static_scales(scale_path, scales, meta)
+    log.info("saved %s, sha256 %s", scale_path, checksum)
+
+    write_manifest(
+        calib_dir,
+        run_id=run_id, gate=1, splits=["calibration"],
+        utc_timestamp=dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
+        git_commit=commit, git_dirty=dirty, final=not dirty,
+        machine=machine_info(),
+        config_path=str(config_path), config_checksum=meta["config_checksum"],
+        static_scale_file="calibration/scales.pt", static_scale_checksum=checksum,
+        static_scale_content_checksum=scales_checksum(scales),
+        scales=scales_summary(scales),
+        tensors_per_length=per_length,
+        leakage=leakage,
+        rounding_half_even=rounding_is_half_even(),
+        seed_rule="int(sha256(f'{split}|{stratum_key}|{sample_id}').hexdigest()[:16], 16)",
+        runtime_seconds=round(time.perf_counter() - t0, 2),
+        status="ok",
+    )
+    log.info("done: OK -> %s", calib_dir)
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
-    ap.add_argument("--gate", type=int, required=True, help="0 = pilot (gates 1-3 not implemented yet)")
+    ap.add_argument("--gate", type=int, required=True,
+                    help="0 = pilot, 1 = freeze static scales (gates 2-3 not implemented yet)")
     ap.add_argument("--out-root", type=Path, default=ROOT / "artifacts")
     ap.add_argument("--samples", type=int, default=None,
                     help="pilot only: limit tensors per regime (for a quick smoke test)")
     ap.add_argument("--no-plots", action="store_true", help="skip sanity plots")
+    ap.add_argument("--allow-dirty", action="store_true",
+                    help="gate 1: allow a dirty git tree (for testing only; the manifest marks it non-final)")
     args = ap.parse_args(argv)
 
     cfg = load_config(args.config)
     configure_torch(cfg)
     if args.gate == 0:
         return run_pilot(cfg, args.config, args.out_root, args.samples, not args.no_plots)
-    ap.error(f"gate {args.gate} is not implemented yet (see issues #6 and #7)")
+    if args.gate == 1:
+        return run_freeze(cfg, args.config, args.out_root, args.allow_dirty)
+    ap.error(f"gate {args.gate} is not implemented yet (see issue #7)")
 
 
 if __name__ == "__main__":

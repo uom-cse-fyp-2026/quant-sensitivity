@@ -44,6 +44,8 @@ Run `just` to list them. From `~/quant-sensitivity`:
 | `just log` | Follow the newest run log live |
 | `just stop` | Stop a running job |
 | `just push` | Commit and push the newest finished run |
+| `just freeze` | Gate 1: freeze the static calibration scales |
+| `just push-scales` | Commit and push the frozen scales |
 | `just runs` | List the runs on this machine |
 
 Runs happen in a tmux session, so press **Ctrl+B then D** to detach and close SSH whenever you
@@ -62,6 +64,17 @@ shows the exit status and waits for Enter.
 
 The run exits non-zero if any row is missing or non-finite. Pilot numbers are for
 debugging only and are never reported.
+
+### Gate 1: freezing the static scales
+
+`just freeze` computes the static absmax scales from the 512 D0 calibration tensors at each
+length (1,024 for the core runs; 256, 4,096 and 16,384 for the S3 sweep) and saves them once
+to `artifacts/calibration/scales.pt`. It takes a few seconds, refuses to run on a dirty git
+tree, and refuses to overwrite scales that already exist. The manifest records the file's
+SHA-256 (which every later run must match) and a content checksum that is reproducible on
+any machine. Then `just push-scales`.
+
+### Pushing results
 
 `just push` gzips the raw CSV, commits the run folder (run outputs are gitignored, so it adds
 them with `-f`), rebases onto any newer code, and pushes. To copy a run without git instead:
