@@ -13,6 +13,37 @@ and does that depend on the input? The experiment follows the supervisor's descr
 
 Full description: [docs/experiment_plan.md](docs/experiment_plan.md).
 
+This is fake (simulated) quantization: each input is quantized to integer codes and
+immediately dequantized, then the same FP32 operator runs on it. It isolates the numerical
+error caused by the quantized input; it does not measure speed or energy.
+
+## Results
+
+From the run on the VM ([run-20261015T175122Z-3e45813](artifacts/run-20261015T175122Z-3e45813/summary/summary.md):
+21,600 comparisons, none missing or non-finite; medians over 300 samples).
+
+- **4 bits costs 18–330× more error than 8 bits** on normal inputs. On those inputs,
+  `layer_norm` keeps 42 dB (0.77% error) at A8 but 17 dB (14%) at A4. Per-group scales
+  (Q2) cut the 4-bit error by 30–55%.
+- **The loss depends on the input.** With the same 4-bit scheme, `layer_norm` error
+  ranges from 13% to 100% across inputs, and `softmax` KL spans six orders of magnitude.
+- **The sensitivity claim holds for `sum` and `layer_norm`, not `softmax`.** Median
+  amplification κ reaches 144 for `sum` on cancelling inputs and 599 for `layer_norm` on
+  near-constant inputs, while `gelu` (elementwise) stays between 0.93 and 1.29. `softmax`
+  does not amplify error, but at 4 bits its top-1 entry changes in up to 80% of samples.
+- **No single scheme is best.** On fixed outlier channels, 4-bit per-group beats 8-bit
+  per-tensor for `softmax` (33× lower KL). Under cancellation, per-tensor beats per-group
+  for `sum`. On near-constant inputs, no scheme preserves the `layer_norm` output.
+
+| Figure | Shows |
+| --- | --- |
+| [F1_inputs.png](artifacts/run-20261015T175122Z-3e45813/plots/F1_inputs.png) | The six input distributions |
+| [F2_error_heatmap.png](artifacts/run-20261015T175122Z-3e45813/plots/F2_error_heatmap.png) | Median error per distribution and scheme, per operator |
+| [F3_amplification.png](artifacts/run-20261015T175122Z-3e45813/plots/F3_amplification.png) | κ by operator and distribution |
+
+Caveats: the inputs are synthetic stress tests, not real model activations. κ values at FP32
+rounding level are excluded (all `softmax` rows on D1, some on D4 and D5).
+
 ## Code
 
 | File | What it does |
