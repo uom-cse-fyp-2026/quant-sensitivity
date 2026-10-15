@@ -40,7 +40,7 @@ from src.quantization import quantize, quantizers_from_config, static_scale
 log = logging.getLogger("run_experiment")
 
 FLOAT_METRICS = ("abs_error", "l1_norm_error", "norm_l2", "sqnr_db", "mae", "max_abs_error",
-                 "softmax_kl", "kappa", "input_rel_l2", "input_mse", "fp32_floor")
+                 "softmax_kl", "kappa", "input_rel_l2", "input_mse", "fp32_floor", "rel_l2_floor")
 
 
 # ---------------------------------------------------------------- run metadata
@@ -71,6 +71,7 @@ def machine_info() -> dict:
         "kernel": platform.release(),
         "python": platform.python_version(),
         "torch": torch.__version__,
+        "torch_cpu_capability": torch.backends.cpu.get_cpu_capability(),
         "numpy": np.__version__,
         "torch_num_threads": torch.get_num_threads(),
         "deterministic_algorithms": torch.are_deterministic_algorithms_enabled(),

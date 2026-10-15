@@ -78,7 +78,8 @@ def pilot_medians(df: pd.DataFrame) -> pd.DataFrame:
     g = df.groupby(["operator", "regime", "quantizer", "calib_policy"], sort=True)
     return g.agg(n_tensors=("sample_id", "nunique"), primary_metric=("primary_metric", "first"),
                  median_primary=("primary_error", "median"), median_sqnr_db=("sqnr_db", "median"),
-                 median_kappa=("kappa", "median"), median_clip_fraction=("clip_fraction", "median"),
+                 median_kappa=("kappa", "median"), kappa_at_floor_rate=("kappa_at_floor", "mean"),
+                 median_clip_fraction=("clip_fraction", "median"),
                  median_zero_fraction=("zero_fraction", "median"),
                  collapsed_rate=("collapsed", "mean"), top1_changed_rate=("top1_changed", "mean")).reset_index()
 

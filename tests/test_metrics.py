@@ -102,10 +102,14 @@ def test_kappa_gelu_near_one_and_sum_large_under_cancellation(cfg):
     r = quantize(x0, qz)
     k_gelu = amplification(x0, r.x_hat, apply("gelu", x0), apply("gelu", r.x_hat))
     assert 0.2 < k_gelu < 5
-    x3 = generate_stratum(s["D3"], 11)
-    r3 = quantize(x3, qz)
-    k_sum = amplification(x3, r3.x_hat, apply("sum", x3), apply("sum", r3.x_hat))
-    assert k_sum > 100
+    def median_sum_kappa(regime):
+        ks = []
+        for seed in range(30):
+            x = generate_stratum(s[regime], seed)
+            rq = quantize(x, qz)
+            ks.append(amplification(x, rq.x_hat, apply("sum", x), apply("sum", rq.x_hat)))
+        return sorted(ks)[len(ks) // 2]
+    assert median_sum_kappa("D3") > 20 * median_sum_kappa("D0")   # about 100 vs about 1
 
 
 def test_fp32_floor_is_small_on_d0(cfg):
@@ -155,3 +159,21 @@ def test_make_row(cfg):
     assert row["group_size"] == 32 and row["granularity"] == "per_group" and row["softmax_kl"] is None
     with pytest.raises(KeyError):
         make_row(not_a_field=1)
+
+
+def test_kappa_at_floor_flags_fp32_noise(cfg):
+    """Softmax on D1 under dynamic scales: outliers keep all the mass and quantize exactly,
+    so the output error sits at FP32 resolution and kappa must be flagged."""
+    qz = quantizers_from_config(cfg)["Q1"]
+    s = {st.key: st for st in regime_strata(cfg)}
+    x1 = generate_stratum(s["D1"], sample_seed("pilot", "D1", 0))
+    r = quantize(x1, qz)
+    y32, y64 = references("softmax", x1)
+    m = evaluate("softmax", x1, r.x_hat, y32, y64, apply("softmax", r.x_hat))
+    assert m["rel_l2_floor"] > 0 and m["kappa_at_floor"] == 1
+
+    x0 = generate_stratum(s["D0"], sample_seed("pilot", "D0", 0))
+    r0 = quantize(x0, qz)
+    y32, y64 = references("gelu", x0)
+    m0 = evaluate("gelu", x0, r0.x_hat, y32, y64, apply("gelu", r0.x_hat))
+    assert m0["kappa_at_floor"] == 0

@@ -51,6 +51,7 @@ def test_manifest(pilot_dir):
     assert m["status"] == "ok" and m["splits"] == ["pilot"]
     assert m["rounding_half_even"] is True
     assert m["machine"]["torch_num_threads"] == 1
+    assert m["machine"]["torch_cpu_capability"]
     c = m["counts"]["pilot"]
     assert c["rows"] == c["expected_rows"] and c["missing_rows"] == c["non_finite_rows"] == 0
     assert m["static_scale_checksum"] is None   # pilot scales are throwaway

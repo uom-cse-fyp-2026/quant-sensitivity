@@ -213,6 +213,7 @@ Every quantized output is compared with the FP32 reference (the supervisor's bas
 - `y_ref32 = Op(x)` in FP32, computed **once** per input and reused for all quantizers.
 - `y_ref64 = Op(x.double())`, also once per input.
 - `fp32_floor = metric(y_ref64, y_ref32)`, saved per sample. If a quantization error is within 10× of this floor, flag it as "at numerical floor".
+- `rel_l2_floor = ‖y_ref32 − y_ref64‖₂ / ‖y_ref64‖₂`, the noise level of κ's numerator. `kappa_at_floor` is 1 when the output's relative error is within 10× of it; such κ values are FP32 noise and are never reported as findings. (Added at Gate 0: the pilot showed softmax under D1/D5 dynamic with errors at FP32 resolution, where κ differed by up to 50% between machines.)
 - Compute all metrics in FP64 from the stored FP32 outputs.
 
 ### 6.2 Metrics by operator
@@ -234,7 +235,7 @@ Normalised L2 is ‖y_q − y_ref‖₂ / (‖y_ref‖₂ + 10⁻¹²). For ever
 
 κ is the empirical condition number: how much the operator magnifies the input's relative quantization error. Expect κ near 1 for `gelu`, and large, regime-dependent κ for `sum` under D3 and for `layer_norm` under D2. Large κ under cancellation is the *intended* signal here, not an artefact.
 
-- Plot κ on a log₁₀ scale; report median and IQR.
+- Plot κ on a log₁₀ scale; report median and IQR, excluding rows with `kappa_at_floor = 1` (count them).
 - Set κ to null (not 0 or infinity) when ‖x̂ − x‖ = 0 or ‖y_ref‖ < 10⁻¹², and count those cases.
 
 ### 6.4 Statistics
@@ -271,6 +272,7 @@ The same held-out FP32 tensors go through every quantizer and both calibration p
 ### 7.2 Determinism and environment
 
 - Run on CPU. Set `torch.set_num_threads(1)`, `torch.use_deterministic_algorithms(True)`, and keep autocast off. FP32 reductions can change with thread count, which would leak into the FP32 floor.
+- Normals are drawn in FP64 and rounded to FP32, so input tensors are bit-identical across machines (a pinned-hash test checks this). Operator outputs (`exp`, `erf`, vectorised reductions) still differ in the last bits between CPUs and operating systems, so runs are bit-identical only on the same machine; primary metrics agree across machines to about 1e-4 relative. Reported numbers come from the VM only. The manifest records PyTorch's CPU kernel capability.
 - Dependencies are pinned in `uv.lock` (Python 3.12, CPU-only PyTorch).
 - A determinism test regenerates 10 tensors per regime and checks they are bit-identical.
 
@@ -323,7 +325,7 @@ The scale-freeze and completeness tests need Gate 1–2 outputs; they are writte
 One long-format row per (split, regime or sweep point, sample, operator, quantizer, policy), written to `artifacts/<run_id>/raw/{development,heldout}.csv`. Fields that do not apply are empty, not zero.
 
 ```csv
-run_id,git_commit,split,regime,sweep_id,sweep_value,sample_id,seed,operator,quantizer,calib_policy,bits,granularity,group_size,effective_bits,n,input_mean,input_var,input_absmax,input_abs_p99,max_over_p99,kurtosis,cancellation_ratio,top2_gap,clip_fraction,zero_fraction,input_mse,input_rel_l2,abs_error,l1_norm_error,norm_l2,sqnr_db,mae,max_abs_error,softmax_kl,top1_changed,collapsed,kappa,fp32_floor,at_floor,ref_finite,quant_finite
+run_id,git_commit,split,regime,sweep_id,sweep_value,sample_id,seed,operator,quantizer,calib_policy,bits,granularity,group_size,effective_bits,n,input_mean,input_var,input_absmax,input_abs_p99,max_over_p99,kurtosis,cancellation_ratio,top2_gap,clip_fraction,zero_fraction,input_mse,input_rel_l2,abs_error,l1_norm_error,norm_l2,sqnr_db,mae,max_abs_error,softmax_kl,top1_changed,collapsed,kappa,fp32_floor,at_floor,rel_l2_floor,kappa_at_floor,ref_finite,quant_finite
 ```
 
 ### 8.3 Repository layout

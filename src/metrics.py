@@ -24,7 +24,8 @@ CSV_FIELDS = [
     "cancellation_ratio", "top2_gap",
     "clip_fraction", "zero_fraction", "input_mse", "input_rel_l2",
     "abs_error", "l1_norm_error", "norm_l2", "sqnr_db", "mae", "max_abs_error", "softmax_kl",
-    "top1_changed", "collapsed", "kappa", "fp32_floor", "at_floor", "ref_finite", "quant_finite",
+    "top1_changed", "collapsed", "kappa", "fp32_floor", "at_floor", "rel_l2_floor", "kappa_at_floor",
+    "ref_finite", "quant_finite",
 ]
 
 
@@ -87,17 +88,30 @@ def fp32_floor(op: str, x: torch.Tensor, y_ref32: torch.Tensor, y_ref64: torch.T
     return error_metrics(op, x, y_ref64, y_ref32)[PRIMARY[op]]
 
 
+def rel_l2_floor(y_ref32: torch.Tensor, y_ref64: torch.Tensor) -> float | None:
+    """Relative L2 error of the FP32 reference against FP64: the noise level of kappa's numerator."""
+    ref = _norm(y_ref64.double())
+    return _norm(y_ref32.double() - y_ref64.double()) / ref if ref >= KAPPA_NULL_REF_NORM else None
+
+
 def evaluate(op: str, x: torch.Tensor, x_hat: torch.Tensor,
              y_ref32: torch.Tensor, y_ref64: torch.Tensor, y_q: torch.Tensor) -> dict:
     """All per-row metric fields for one (input, operator, quantizer, policy)."""
     m = error_metrics(op, x, y_ref32, y_q)
     floor = fp32_floor(op, x, y_ref32, y_ref64)
     x_norm = _norm(x.double())
+    l2_floor = rel_l2_floor(y_ref32, y_ref64)
+    ref_norm = _norm(y_ref32.double())
+    out_rel = _norm(y_q.double() - y_ref32.double()) / ref_norm if ref_norm >= KAPPA_NULL_REF_NORM else None
     m.update(
         input_rel_l2=_norm(x_hat.double() - x.double()) / x_norm if x_norm > 0 else None,
         kappa=amplification(x, x_hat, y_ref32, y_q),
         fp32_floor=floor,
         at_floor=int(m[PRIMARY[op]] <= AT_FLOOR_FACTOR * abs(floor)),
+        rel_l2_floor=l2_floor,
+        # kappa's output error is within 10x of FP32's own rounding: kappa is noise, not signal
+        kappa_at_floor=(None if out_rel is None or l2_floor is None
+                        else int(out_rel <= AT_FLOOR_FACTOR * l2_floor)),
         ref_finite=int(torch.isfinite(y_ref32).all().item()),
         quant_finite=int(torch.isfinite(y_q).all().item() and torch.isfinite(x_hat).all().item()),
     )
