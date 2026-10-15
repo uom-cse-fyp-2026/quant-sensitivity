@@ -1,0 +1,16 @@
+2026-10-15 11:50:26,442 INFO run calibration-20261015T062026Z-44a2db8 (commit 44a2db8)
+2026-10-15 11:50:26,469 INFO leakage check: {'calibration_tensors': 2048, 'other_split_tensors': 8312, 'overlapping_seeds': 0}
+2026-10-15 11:50:27,847 INFO static scale n=256 Q0: 0.0358496
+2026-10-15 11:50:29,396 INFO static scale n=256 Q1: 0.650414
+2026-10-15 11:50:29,397 INFO static scale n=256 Q2: 8 groups, 0.564..0.6504
+2026-10-15 11:50:29,397 INFO static scale n=1024 Q0: 0.0393859
+2026-10-15 11:50:29,398 INFO static scale n=1024 Q1: 0.714573
+2026-10-15 11:50:29,398 INFO static scale n=1024 Q2: 32 groups, 0.5404..0.7146
+2026-10-15 11:50:29,398 INFO static scale n=4096 Q0: 0.0396936
+2026-10-15 11:50:29,398 INFO static scale n=4096 Q1: 0.720156
+2026-10-15 11:50:29,398 INFO static scale n=4096 Q2: 128 groups, 0.5146..0.7202
+2026-10-15 11:50:29,398 INFO static scale n=16384 Q0: 0.0424994
+2026-10-15 11:50:29,399 INFO static scale n=16384 Q1: 0.771061
+2026-10-15 11:50:29,399 INFO static scale n=16384 Q2: 512 groups, 0.4988..0.7711
+2026-10-15 11:50:29,409 INFO saved /home/deepthi/quant-sensitivity/artifacts/calibration/scales.pt, sha256 7e5bdd622e3e79773182f4746450c6311ace474b45cba9146cbb63d3f4e75f46
+2026-10-15 11:50:29,442 INFO done: OK -> /home/deepthi/quant-sensitivity/artifacts/calibration
