@@ -11,6 +11,18 @@ input needs.
 
 ## Running on the VM
 
+The VM is shared, so everything stays inside your home directory: no sudo, no system
+packages, no global config. uv installs to `~/.local/bin`, and the project uses uv's own
+standalone Python 3.12 (under `~/.local/share/uv/python`), never the system interpreter.
+
+One-time uv install:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Then:
+
 ```bash
 git clone git@github.com:uom-cse-fyp-2026/quant-sensitivity.git
 cd quant-sensitivity

@@ -14,6 +14,12 @@ dependencies = [
 [dependency-groups]
 dev = ["pytest>=8.0"]
 
+[tool.uv]
+# Always use uv's standalone CPython, installed per user under ~/.local/share/uv/python.
+# The shared VM's /usr/local python3.12 lacks _ctypes (built without libffi), which torch
+# needs, and system interpreters must not be modified on a multi-user machine.
+python-preference = "only-managed"
+
 # CPU-only PyTorch wheels on every platform (the VM has no GPU; avoids pulling CUDA).
 [tool.uv.sources]
 torch = [{ index = "pytorch-cpu" }]
