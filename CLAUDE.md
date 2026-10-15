@@ -42,3 +42,5 @@ which quantizer an input needs. Null results are valid. Never tune on held-out d
 - src/config.py: config loading, deterministic torch setup, design enumeration (strata, seeds, expected rows)
 - src/distributions.py: D0-D5 generators; random-draw order is part of the definition, freeze it after Gate 1
 - src/quantization.py, src/operators.py, src/metrics.py (incl. CSV schema), src/features.py
+- src/run_experiment.py: runner; --gate 0 is the pilot (throwaway static scales, never saved)
+- src/sanity.py: pilot histograms, regime stats, medians and the informal predictions check

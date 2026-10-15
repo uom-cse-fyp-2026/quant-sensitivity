@@ -342,7 +342,8 @@ quant-sensitivity/
 │   ├── operators.py
 │   ├── metrics.py           # incl. SQNR, kappa, FP64 floor, CSV schema
 │   ├── features.py          # inspector descriptors
-│   ├── run_experiment.py    # gates 1–3
+│   ├── run_experiment.py    # gates 0–3 (gate 0 = pilot)
+│   ├── sanity.py            # gate 0 pilot plots and checks
 │   ├── analysis.py          # gate 4: tables + figures from raw CSV only
 │   └── inspector.py         # gate 5
 ├── tests/
