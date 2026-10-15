@@ -1,19 +1,35 @@
 # quant-sensitivity
 
-NeuroMinds Stage 1: an activation-only, fake-quantization study of how operator error
-(`sum`, `softmax`, `layer_norm`, with `gelu` as an elementwise control) depends on the
-input distribution, and whether a cheap input descriptor predicts which quantizer an
-input needs.
+NeuroMinds: how much precision does an operator lose under different quantization schemes,
+and does that depend on the input? The experiment follows the supervisor's description:
 
-- Protocol: [docs/experiment_plan.md](docs/experiment_plan.md)
-- Context for Claude Code: [CLAUDE.md](CLAUDE.md)
-- Work is tracked gate by gate in GitHub issues.
+1. Operators `sum`, `softmax` and `layer_norm` (reductions), with `gelu` (elementwise) to
+   check that reductions are more sensitive.
+2. Six contrasting FP32 input distributions, 300 samples each; baseline `Y = Op(A, NoQuant)`.
+3. Three schemes: Q0 A8 per-tensor, Q1 A4 per-tensor, Q2 A4 per-group-32.
+4. `Y_q = Op(A, Q)` for every sample and scheme.
+5. Quantify `Y_q − Y`: error tables, an amplification check, and how the best scheme changes
+   with the input.
+
+Full description: [docs/experiment_plan.md](docs/experiment_plan.md).
+
+## Code
+
+| File | What it does |
+| --- | --- |
+| `configs/experiment.yaml` | Operators, distributions, schemes, sample count, seeds |
+| `src/distributions.py` | Input distributions D0–D5 |
+| `src/quantization.py` | Schemes Q0–Q2 |
+| `src/operators.py` | The four operators and the FP32 baseline |
+| `src/metrics.py` | Error measures and the amplification factor κ |
+| `src/run_experiment.py` | Runs everything and writes the raw CSV |
+| `src/analysis.py` | Tables and figures from the raw CSV |
 
 ## Running on the VM
 
 The VM is shared, so everything stays inside your home directory: no sudo, no system
-packages, no global config. uv and just install to `~/.local/bin`, and the project uses
-uv's own standalone Python 3.12, never the system interpreter.
+packages, no global config. uv and just install to `~/.local/bin`, and the project uses uv's
+own standalone Python 3.12.
 
 One-time setup:
 
@@ -29,56 +45,34 @@ uv tool install rust-just
 git clone git@github.com:uom-cse-fyp-2026/quant-sensitivity.git && cd quant-sensitivity && just pull
 ```
 
-### Commands
-
-Run `just` to list them. From `~/quant-sensitivity`:
+Then, from `~/quant-sensitivity`:
 
 | Command | What it does |
 | --- | --- |
 | `just pull` | Get the latest code and update the environment |
 | `just test` | Run the unit tests |
-| `just run` | Run the pilot (gate 0) inside tmux; `just run 1` for gate 1, and so on |
-| `just pull-run` | Pull, update, test, then run |
-| `just attach` (or `just fg`) | Bring the running job back to the foreground |
+| `just run` | Run the experiment and its analysis inside tmux (about 30 s) |
+| `just pull-run` | Pull, test, then run |
+| `just attach` (or `just fg`) | Bring the run back to the foreground |
 | `just status` | Is a run going? Shows the end of the newest run log |
-| `just log` | Follow the newest run log live |
 | `just stop` | Stop a running job |
 | `just push` | Commit and push the newest finished run |
-| `just freeze` | Gate 1: freeze the static calibration scales |
-| `just push-scales` | Commit and push the frozen scales |
+| `just analyze` | Redo the tables and figures for the newest run |
 | `just runs` | List the runs on this machine |
 
-Runs happen in a tmux session, so press **Ctrl+B then D** to detach and close SSH whenever you
-like. Reconnect and type `just attach` to see it again. When the run finishes, the window
-shows the exit status and waits for Enter.
+In tmux, press **Ctrl+B then D** to detach and close SSH whenever you like; `just attach`
+brings it back. When the run finishes, the window shows the exit status and waits for Enter.
 
-### What a pilot run writes
+## What a run writes
 
-`artifacts/pilot-<UTC time>-<commit>/` with:
+`artifacts/run-<UTC time>-<commit>/`:
 
-- `raw/pilot.csv`: one row per (regime, sample, operator, quantizer, policy), 14,400 rows
-- `manifest.json`: commit, machine, versions, checksums, row and non-finite counts
+- `raw/results.csv`: one row per (distribution, sample, operator, scheme), 21,600 rows
+- `manifest.json`: commit, machine, versions, row and non-finite counts
 - `run.log`
-- `plots/pilot_histograms.png`, `summary/regime_stats.csv`, `summary/pilot_medians.csv`,
-  `summary/pilot_predictions_check.md`
+- `summary/summary.md`: the report tables (loss of precision, sensitivity check, scheme ranking)
+- `summary/summary.csv`: medians, IQR, p95 and bootstrap CIs
+- `plots/F1_inputs.png`, `plots/F2_error_heatmap.png`, `plots/F3_amplification.png`
 
-The run exits non-zero if any row is missing or non-finite. Pilot numbers are for
-debugging only and are never reported.
-
-### Gate 1: freezing the static scales
-
-`just freeze` computes the static absmax scales from the 512 D0 calibration tensors at each
-length (1,024 for the core runs; 256, 4,096 and 16,384 for the S3 sweep) and saves them once
-to `artifacts/calibration/scales.pt`. It takes a few seconds, refuses to run on a dirty git
-tree, and refuses to overwrite scales that already exist. The manifest records the file's
-SHA-256 (which every later run must match) and a content checksum that is reproducible on
-any machine. Then `just push-scales`.
-
-### Pushing results
-
-`just push` gzips the raw CSV, commits the run folder (run outputs are gitignored, so it adds
-them with `-f`), rebases onto any newer code, and pushes. To copy a run without git instead:
-
-```bash
-scp -r <user>@<vm-host>:~/quant-sensitivity/artifacts/<run_id> ./artifacts/
-```
+The run exits non-zero if any row is missing or non-finite. `just push` gzips the raw CSV,
+commits the run folder, rebases onto any newer code and pushes.

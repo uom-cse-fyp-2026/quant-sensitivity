@@ -1,51 +1,36 @@
 # NeuroMinds quantization sensitivity experiment
 
 FYP: Compiler-Directed Adaptive Quantization Framework for Edge LLMs (Univ. of Moratuwa).
-This repo is Stage 1: an activation-only, fake-quantization study of how operator error
-depends on input distribution. Full protocol: docs/experiment_plan.md (source of truth).
+This repo is one experiment: fake quantization of operator inputs, measuring how much
+precision each operator loses and how that depends on the input. Description:
+docs/experiment_plan.md.
 
-## Claim under test
-No single static quantizer is best across inputs; a cheap input descriptor predicts
-which quantizer an input needs. Null results are valid. Never tune on held-out data.
-
-## Design (do not change without updating docs/experiment_plan.md and reports/findings.md "Deviations")
-- Operators: sum, softmax, layer_norm (weight=None, bias=None, eps=1e-5), gelu (control).
-- Deferred for now: everything LLM-related and Tier 2 (Llama activation replay, matvec, rms_norm, FP8/asymmetric quantizers) and Stage 2. Do not implement unless asked.
-- Regimes: D0 normal, D1 random outliers, D2 near-constant, D3 cancellation, D4 Student-t(3)/sqrt(3), D5 fixed outlier channels. Sweeps S1-S5.
-- Quantizers: Q0 A8 per-tensor, Q1 A4 per-tensor, Q2 A4 per-group g=32. Symmetric, round-half-even, saturating.
-- Calibration: static (absmax over 512 D0 tensors, frozen, checksummed) and dynamic (per input).
-- References: FP32 primary, FP64 floor. Metrics computed in FP64.
-- Splits: pilot / calibration (D0 only) / development / held-out. Held-out evaluated once.
+## Scope: the supervisor's five steps, nothing more
+1. 2-3 sensitive operators (sum, softmax, layer_norm) plus gelu, to verify that reductions
+   are more sensitive than elementwise ops.
+2. Contrasting FP32 input distributions D0-D5; baseline Y = Op(A, NoQuant) in FP32.
+3. Schemes Q0 A8 per-tensor, Q1 A4 per-tensor, Q2 A4 per-group-32 (symmetric, round-half-even,
+   saturating, scale = the input's own absmax).
+4. Y_q = Op(A_hat) for every sample and scheme.
+5. Quantify Y_q - Y (src/metrics.py) and summarise (src/analysis.py).
+Do not add calibration splits, sweeps, inspectors, LLM work or other extras unless asked.
 
 ## Rules
-- Generate FP32 first, then quantize. Per-sample torch.Generator seeded from sha256(split|regime|sample_id).
-- CPU only, torch.set_num_threads(1), deterministic algorithms, no autocast.
-- One long-format CSV row per (split, regime/sweep point, sample, operator, quantizer, policy). Inapplicable fields empty, never 0.
-- Never drop or replace NaN/inf. Stop and report.
-- Unit of analysis is the input tensor. Bootstrap CIs over tensors.
-- Figures come only from src/analysis.py reading raw CSVs.
-- Work gate by gate (plan section 8). Stop at the end of each gate for human review before continuing.
+- Generate FP32 inputs first (normals drawn in FP64, rounded to FP32), then quantize.
+  Per-sample torch.Generator seeded from sha256(regime|sample_id). Pinned-hash tests guard this.
+- CPU only, torch.set_num_threads(1), deterministic algorithms.
+- One CSV row per (distribution, sample, operator, scheme). Inapplicable fields empty, never 0.
+- Never drop or replace NaN/inf; the run fails and reports them.
+- The unit of analysis is the sample. Bootstrap CIs over samples.
+- kappa rows flagged at_fp32_noise are excluded from kappa summaries.
+- Tables and figures come only from src/analysis.py reading the raw CSV.
 
 ## Where things run
-- Code is written and unit-tested locally or on the VM; all reported runs (pilot, Gates 1-6) execute on the VM.
-- The VM is shared with other users: user-local commands only (no sudo, no global config).
-- VM commands go through the justfile: just pull, just run [gate], just pull-run, just attach,
-  just status, just push. just run starts the job in tmux session "qs" (Ctrl+B D to detach).
-- Each run logs to artifacts/<run_id>/run.log. just push gzips raw CSVs, commits, rebases, pushes.
-- Raw CSVs stay out of git (artifacts/*/raw/ is gitignored). Summaries, figures and manifests are committed.
-- Results come back to the laptop with scp (see README "Pulling results from the VM").
+- Reported runs execute on the VM, which is shared: user-local commands only (no sudo, no global config).
+- VM commands go through the justfile: just pull, just test, just run, just attach, just status, just push.
+  just run starts the job in tmux session "qs" (Ctrl+B then D to detach).
 
 ## Commands
-- Environment: uv sync (Python 3.12, CPU-only torch, pinned in uv.lock)
-- Tests: uv run pytest -q
-- Run: uv run python -m src.run_experiment --config configs/experiment.yaml --gate <n>
-- Analysis: uv run python -m src.analysis --run <run_id>
-
-## Code map
-- src/config.py: config loading, deterministic torch setup, design enumeration (strata, seeds, expected rows)
-- src/distributions.py: D0-D5 generators; random-draw order is part of the definition, freeze it after Gate 1
-- src/quantization.py, src/operators.py, src/metrics.py (incl. CSV schema), src/features.py
-- src/run_experiment.py: runner; --gate 0 is the pilot (throwaway static scales, never saved);
-  --gate 1 freezes static scales to artifacts/calibration/scales.pt (refuses dirty tree or overwrite);
-  load_static_scales() reads them back for Gate 2
-- src/sanity.py: pilot histograms, regime stats, medians and the informal predictions check
+- Tests: uv run pytest
+- Run: uv run python -m src.run_experiment   (add --samples 3 for a quick check)
+- Analysis only: uv run python -m src.analysis --run artifacts/<run_id>

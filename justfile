@@ -1,12 +1,11 @@
 # Short commands for the experiment. Run `just` to list them.
-# Runs happen inside a tmux session, so you can detach with Ctrl+B then D, close SSH,
+# `just run` works inside a tmux session, so you can detach with Ctrl+B then D, close SSH,
 # and come back later with `just attach`.
 
 set shell := ["bash", "-cu"]
 set windows-shell := ["bash", "-cu"]
 
 session := "qs"
-config := "configs/experiment.yaml"
 
 # List the commands
 default:
@@ -21,17 +20,16 @@ pull:
 test:
     uv run pytest
 
-# Run a gate (default 0 = pilot) in tmux; Ctrl+B then D to detach, `just attach` to return
-run gate="0":
+# Run the experiment and its analysis in tmux; Ctrl+B then D to detach, `just attach` to return
+run:
     #!/usr/bin/env bash
     set -euo pipefail
-    cmd='uv run python -m src.run_experiment --config {{config}} --gate {{gate}}; rc=$?; echo; echo "[finished: exit status $rc] press Enter to close"; read'
+    cmd='uv run python -m src.run_experiment; rc=$?; echo; echo "[finished: exit status $rc] press Enter to close"; read'
     if [ -n "${TMUX:-}" ]; then
-        echo "already inside tmux; running here"
         exec bash -c "$cmd"
     fi
     if ! command -v tmux >/dev/null; then
-        echo "tmux is not installed; run without it: uv run python -m src.run_experiment --gate {{gate}}" >&2
+        echo "tmux is not installed; run without it: uv run python -m src.run_experiment" >&2
         exit 1
     fi
     if tmux has-session -t {{session}} 2>/dev/null; then
@@ -40,9 +38,8 @@ run gate="0":
     fi
     tmux new-session -s {{session}} "$cmd"
 
-# Pull, update, test, then run a gate (default 0 = pilot)
-pull-run gate="0": pull test
-    just run {{gate}}
+# Pull, update, test, then run
+pull-run: pull test run
 
 # Bring the running job back to the foreground (detach again: Ctrl+B then D)
 attach:
@@ -53,30 +50,18 @@ alias fg := attach
 # Is a run going? Shows the end of the newest run log
 status:
     #!/usr/bin/env bash
-    if tmux has-session -t {{session}} 2>/dev/null; then
-        echo "running (just attach to watch)"
-    else
-        echo "nothing running"
-    fi
+    if tmux has-session -t {{session}} 2>/dev/null; then echo "running (just attach to watch)"; else echo "nothing running"; fi
     log=$(ls -t artifacts/*/run.log 2>/dev/null | head -1)
     [ -n "$log" ] && { echo "--- $log ---"; tail -n 12 "$log"; }
     true
-
-# Follow the newest run log live (Ctrl+C stops watching, not the run)
-log:
-    tail -f "$(ls -t artifacts/*/run.log | head -1)"
 
 # Stop a running job
 stop:
     tmux kill-session -t {{session}}
 
-# Gate 1: freeze the static calibration scales (takes seconds; needs a clean git tree)
-freeze:
-    uv run python -m src.run_experiment --config {{config}} --gate 1
-
-# Commit and push the frozen scales from Gate 1
-push-scales:
-    scripts/push_results.sh artifacts/calibration
+# Redo the tables and figures for a run (default: newest), e.g. after changing the analysis
+analyze run="":
+    uv run python -m src.analysis --run "{{ if run == "" { `ls -td artifacts/*/ | head -1` } else { run } }}"
 
 # Commit and push the newest finished run (or one you name: just push artifacts/<run_id>)
 push run="":
@@ -84,4 +69,4 @@ push run="":
 
 # List the runs on this machine, newest first
 runs:
-    @ls -td artifacts/*/ 2>/dev/null | grep -v calibration || echo "no runs yet"
+    @ls -td artifacts/*/ 2>/dev/null || echo "no runs yet"
